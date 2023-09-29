@@ -1,7 +1,17 @@
+import rclpy.time
 import cv2
 import numpy as np
 from cv2 import aruco
 from scipy.spatial.transform import Rotation as R
+import rclpy
+from rclpy.node import Node
+from cv_bridge import CvBridge
+from sensor_msgs.msg import Image
+from tf2_ros.buffer import Buffer
+from tf2_ros import TransformException
+from tf2_ros.transform_listener import TransformListener
+import sys
+
 
 def detect_aruco(image):
     '''
@@ -60,6 +70,7 @@ def detect_aruco(image):
     print(center_aruco_list, distance_from_rgb_list, angle_aruco_list, width_aruco_list, ids)
     return center_aruco_list, distance_from_rgb_list, angle_aruco_list, width_aruco_list, ids
 
+from subscribing_node import MySubscriber
 def calculate_rectangle_area(coordinates):
     '''
     Description:    Function to calculate area or detected aruco
@@ -90,6 +101,29 @@ cam_mat = np.array([[931.1829833984375, 0.0, 640.0], [0.0, 931.1829833984375, 36
 dist_mat = np.array([0.0, 0.0, 0.0, 0.0, 0.0])
 size_of_aruco_m = 0.15
 
+class FrameListener(Node):
+    def __init__(self):
+        super().__init__('sample_tf2_frame_listener')
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
+        self.timer = self.create_timer(1.0, self.on_time)
+    def on_timer(self):
+        from_frame_rel = 'obj_1'                                                                        # frame from which transfrom has been sent
+        to_frame_rel = 'base_link'                                                                      # frame to which transfrom has been se
+        try:
+            t = self.tf_buffer.lookup_transform( to_frame_rel, from_frame_rel, rclpy.time.Time())       # look up for the transformation between 'obj_1' and 'base_link' frames
+            self.get_logger().info(f'Successfully received data!')
+        except TransformException as e:
+            self.get_logger().info(f'Could not transform {to_frame_rel} to {from_frame_rel}: {e}')
+            return
+        # Logging transform data...
+        self.get_logger().info(f'Translation X:  {t.transform.translation.x}')
+        self.get_logger().info(f'Translation Y:  {t.transform.translation.y}')
+        self.get_logger().info(f'Translation Z:  {t.transform.translation.z}')
+        self.get_logger().info(f'Rotation X:  {t.transform.rotation.x}')                                # NOTE: rotations are in quaternions
+        self.get_logger().info(f'Rotation Y:  {t.transform.rotation.y}')
+        self.get_logger().info(f'Rotation Z:  {t.transform.rotation.z}')
+        self.get_logger().info(f'Rotation W:  {t.transform.rotation.w}')
 class aruco_tf(Node):
     '''
     __CLASS__
@@ -97,7 +131,7 @@ class aruco_tf(Node):
     Description:    Class which servers purpose to define process for detecting aruco marker and publishing tf on pose estimated.
     '''
 
-    def _init_(self):
+    def __init__(self):
         '''
         Description:    Initialization of class aruco_tf
                         All classes have a function called _init_(), which is always executed when the class is being initiated.
@@ -105,7 +139,7 @@ class aruco_tf(Node):
                         You can find more on this topic here -> https://www.w3schools.com/python/python_classes.asp
         '''
 
-        super()._init_('aruco_tf_publisher')                                          # registering node
+        super().__init__('aruco_tf_publisher')                                          # registering node
 
         ############ Topic SUBSCRIPTIONS ############
 
@@ -122,7 +156,10 @@ class aruco_tf(Node):
         self.timer = self.create_timer(image_processing_rate, self.process_image)       # creating a timer based function which gets called on every 0.2 seconds (as defined by 'image_processing_rate' variable)
         
         self.cv_image = None                                                            # colour raw image variable (from colorimagecb())
-        self.depth_image = None                                                         # depth image variable (from depthimagecb())
+        self.depth_image = None  
+        self.frame_listener = self.FrameListener()  # Create an instance of FrameListener
+                                                       # depth image variable (from depthimagecb())
+           
 import cv2
 from cv_bridge import CvBridge
 
@@ -257,7 +294,7 @@ def process_image(self):
         cv2.imshow('Aruco Markers', image)
         cv2.waitKey(1)
 # Import the subscribing node class
-from subscribing_node import MySubscriber
+
 
 
 def main():
@@ -280,7 +317,7 @@ def main():
     rclpy.shutdown()                                                # shutdown process
 
 
-if _name_ == '_main_':
+if __name__ == '__main__':
     '''
     Description:    If the python interpreter is running that module (the source file) as the main program, 
                     it sets the special _name_ variable to have a value “_main_”. 
